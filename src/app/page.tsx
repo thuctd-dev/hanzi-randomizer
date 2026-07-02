@@ -233,8 +233,8 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════
           HEADER
       ═══════════════════════════════════════════════════════ */}
-      <header className="sticky top-0 z-50 bg-slate-900/55 backdrop-blur-2xl border-b border-white/10">
-        <div className="max-w-4xl mx-auto px-5 h-16 flex items-center justify-between gap-3">
+      <header className="fixed top-0 inset-x-0 z-50 bg-slate-900/55 backdrop-blur-2xl border-b border-white/10">
+        <div className="max-w-5xl mx-auto px-5 h-16 flex  items-center justify-between gap-3">
 
           {/* Left: logo + back */}
           <div className="flex items-center gap-2.5">
@@ -303,7 +303,7 @@ export default function Home() {
 
       {/* Mobile mode tab bar */}
       {activeLesson && (
-        <div className="sm:hidden max-w-4xl mx-auto px-4 pt-3">
+        <div className="sm:hidden max-w-4xl mx-auto px-4 pt-3 mt-16">
           <div className="flex bg-slate-900/50 backdrop-blur-xl p-1 rounded-xl border border-white/10 gap-0.5">
             {tabs.map(tab => (
               <button
@@ -325,7 +325,7 @@ export default function Home() {
       {/* ═══════════════════════════════════════════════════════
           MAIN CONTENT
       ═══════════════════════════════════════════════════════ */}
-      <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto px-4 pt-24 py-8">
 
         {/* Import panel */}
         {isImporting && (

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo, useCallback, useRef, forwardRef } from 'react';
-import { CheckCircle2, XCircle, RotateCcw, Trophy, Send } from 'lucide-react';
+import { CheckCircle2, XCircle, RotateCcw, Trophy, Send, Check } from 'lucide-react';
 import { Vocabulary } from '@/components/GridView';
 
 type HiddenField = 'hanzi' | 'pinyin' | 'meaning';
@@ -276,7 +276,6 @@ export default function FillInGrid({ vocabularies, onMarkSeen }: FillInGridProps
                           value={row.input}
                           onChange={(v) => handleInput(idx, v)}
                           onKeyDown={(e) => handleKeyDown(e, idx)}
-                          onBlur={() => checkRow(idx)}
                           status={row.status}
                           answer={row.vocab.hanzi}
                           showAnswer={row.showAnswer}
@@ -297,7 +296,6 @@ export default function FillInGrid({ vocabularies, onMarkSeen }: FillInGridProps
                           value={row.input}
                           onChange={(v) => handleInput(idx, v)}
                           onKeyDown={(e) => handleKeyDown(e, idx)}
-                          onBlur={() => checkRow(idx)}
                           status={row.status}
                           answer={row.vocab.pinyin}
                           showAnswer={row.showAnswer}
@@ -318,7 +316,6 @@ export default function FillInGrid({ vocabularies, onMarkSeen }: FillInGridProps
                           value={row.input}
                           onChange={(v) => handleInput(idx, v)}
                           onKeyDown={(e) => handleKeyDown(e, idx)}
-                          onBlur={() => checkRow(idx)}
                           status={row.status}
                           answer={row.vocab.meaning}
                           showAnswer={row.showAnswer}
@@ -330,12 +327,34 @@ export default function FillInGrid({ vocabularies, onMarkSeen }: FillInGridProps
                       )}
                     </td>
 
-                    {/* Status icon */}
-                    <td className="py-2.5 px-4 text-center">
-                      {row.status === 'correct' && <CheckCircle2 className="w-4 h-4 text-green-500 mx-auto" />}
-                      {row.status === 'wrong'   && <XCircle      className="w-4 h-4 text-red-400   mx-auto" />}
-                      {row.status === 'idle'    && (
-                        <div className="w-4 h-4 rounded-full border-2 border-slate-200 mx-auto" />
+                    {/* Per-row check button / status icon */}
+                    <td className="py-2.5 px-3 text-center">
+                      {row.status === 'correct' && (
+                        <CheckCircle2 className="w-4 h-4 text-green-500 mx-auto" />
+                      )}
+                      {row.status === 'wrong' && (
+                        <button
+                          type="button"
+                          onClick={() => checkRow(idx)}
+                          title="Kiểm tra lại"
+                          className="mx-auto flex items-center justify-center w-6 h-6 rounded-lg bg-red-100 hover:bg-red-200 text-red-500 transition-colors active:scale-95"
+                        >
+                          <XCircle className="w-4 h-4" />
+                        </button>
+                      )}
+                      {row.status === 'idle' && (
+                        <button
+                          type="button"
+                          onClick={() => checkRow(idx)}
+                          disabled={row.input.trim() === ''}
+                          title="Kiểm tra hàng này"
+                          className={`mx-auto flex items-center justify-center w-6 h-6 rounded-lg transition-all active:scale-95
+                            ${row.input.trim()
+                              ? 'bg-blue-100 hover:bg-blue-200 text-blue-600 cursor-pointer'
+                              : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -350,7 +369,7 @@ export default function FillInGrid({ vocabularies, onMarkSeen }: FillInGridProps
       {!allDone ? (
         <div className="flex items-center justify-between gap-4">
           <p className="text-xs text-white/40 font-medium shrink-0">
-            {checkedCount}/{rows.length} đã kiểm tra · Enter hoặc rời ô để check ngay
+            {checkedCount}/{rows.length} đã kiểm tra · Nhấn ✓ để check từng hàng hoặc Enter để chuyển ô
           </p>
           <button
             onClick={handleCheckAll}
@@ -385,7 +404,6 @@ interface CellProps {
   value: string;
   onChange: (v: string) => void;
   onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => void;
-  onBlur: () => void;
   status: 'idle' | 'correct' | 'wrong';
   answer: string;
   showAnswer: boolean;
@@ -397,7 +415,7 @@ interface CellProps {
 
 const Cell = forwardRef<HTMLInputElement, CellProps>(function Cell(
   {
-    value, onChange, onKeyDown, onBlur,
+    value, onChange, onKeyDown,
     status, answer, showAnswer, onToggleAnswer,
     placeholder, isHanzi, isPinyin,
   },
@@ -421,7 +439,6 @@ const Cell = forwardRef<HTMLInputElement, CellProps>(function Cell(
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
-        onBlur={onBlur}
         placeholder={placeholder}
         autoComplete="off"
         autoCorrect="off"
