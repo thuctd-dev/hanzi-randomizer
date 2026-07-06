@@ -8,15 +8,18 @@ export interface Vocabulary {
   hanzi: string;
   pinyin: string;
   meaning: string;
+  topic?: string;
   lesson: string;
 }
 
 interface GridViewProps {
   vocabularies: Vocabulary[];
+  topic?: string | null;
+  lesson?: string;
   onDataChange: () => void;
 }
 
-export default function GridView({ vocabularies, onDataChange }: GridViewProps) {
+export default function GridView({ vocabularies, topic, lesson, onDataChange }: GridViewProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ hanzi: '', pinyin: '', meaning: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,14 +64,17 @@ export default function GridView({ vocabularies, onDataChange }: GridViewProps) 
 
   const handleAdd = async () => {
     if (!newRow.hanzi || !newRow.pinyin || !newRow.meaning) return;
-    // Grab lesson from the first existing vocabulary in this view
-    const lesson = vocabularies[0]?.lesson ?? 'Bài 1';
+    const lessonName = lesson || vocabularies[0]?.lesson || 'Bài 1';
     setIsSubmitting(true);
     try {
+      const body: Record<string, unknown> = { items: [newRow], lesson: lessonName };
+      if (topic?.trim()) {
+        body.topic = topic.trim();
+      }
       const res = await fetch('/api/vocabulary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: [newRow], lesson }),
+        body: JSON.stringify(body),
       });
       if (res.ok) { setNewRow({ hanzi: '', pinyin: '', meaning: '' }); onDataChange(); }
     } catch (e) {

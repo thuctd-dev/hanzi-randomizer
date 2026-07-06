@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import {
   BookOpen, Layers, LayoutGrid, PencilLine,
-  ChevronRight, BookMarked, RotateCcw, CheckCircle,
+  ChevronRight, BookMarked, Trash2, CheckCircle,
 } from 'lucide-react';
 
 export interface Lesson {
@@ -16,7 +16,10 @@ export type StudyMode = 'flashcard' | 'grid' | 'fill';
 interface LessonPickerProps {
   lessons: Lesson[];
   isLoading: boolean;
+  progressResetKey?: number;
+  topic?: string | null;
   onSelect: (lesson: Lesson, mode: StudyMode) => void;
+  onDelete: (lessonName: string) => void;
 }
 
 const MODES: { id: StudyMode; label: string; icon: React.ReactNode }[] = [
@@ -51,51 +54,77 @@ export interface LessonProgress {
   completedAt?: number; // timestamp ms
 }
 
-export function getProgress(lessonName: string): LessonProgress | null {
+function getStorageKey(topic: string | null | undefined, lessonName: string) {
+  return topic ? `${topic}::${lessonName}` : lessonName;
+}
+
+export function getProgress(topic: string | null | undefined, lessonName: string): LessonProgress | null {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;
     const map: Record<string, LessonProgress> = JSON.parse(raw);
-    return map[lessonName] ?? null;
+    return map[getStorageKey(topic, lessonName)] ?? null;
   } catch { return null; }
 }
 
-export function saveProgress(lessonName: string, p: LessonProgress) {
+export function saveProgress(topic: string | null | undefined, lessonName: string, p: LessonProgress) {
   try {
     const raw = localStorage.getItem(LS_KEY);
     const map: Record<string, LessonProgress> = raw ? JSON.parse(raw) : {};
-    map[lessonName] = p;
+    map[getStorageKey(topic, lessonName)] = p;
     localStorage.setItem(LS_KEY, JSON.stringify(map));
   } catch { /* ignore */ }
 }
 
-export function resetProgress(lessonName: string) {
+export function resetProgress(topic: string | null | undefined, lessonName: string) {
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return;
     const map: Record<string, LessonProgress> = JSON.parse(raw);
-    delete map[lessonName];
+    delete map[getStorageKey(topic, lessonName)];
     localStorage.setItem(LS_KEY, JSON.stringify(map));
   } catch { /* ignore */ }
 }
 
+export function clearAllProgress() {
+  try {
+    localStorage.removeItem(LS_KEY);
+  } catch { /* ignore */ }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────
-export default function LessonPicker({ lessons, isLoading, onSelect }: LessonPickerProps) {
+function getProgressWidthClass(pct: number) {
+  if (pct <= 0) return 'w-0';
+  if (pct < 10) return 'w-1/12';
+  if (pct < 20) return 'w-1/6';
+  if (pct < 30) return 'w-1/4';
+  if (pct < 40) return 'w-1/3';
+  if (pct < 50) return 'w-5/12';
+  if (pct < 60) return 'w-1/2';
+  if (pct < 70) return 'w-7/12';
+  if (pct < 80) return 'w-2/3';
+  if (pct < 90) return 'w-3/4';
+  if (pct < 100) return 'w-11/12';
+  return 'w-full';
+}
+
+export default function LessonPicker({ lessons, isLoading, progressResetKey, onSelect, onDelete }: LessonPickerProps) {
   // Read progress from localStorage on client side
   const [progMap, setProgMap] = useState<Record<string, LessonProgress>>({});
 
   useEffect(() => {
     const map: Record<string, LessonProgress> = {};
     for (const l of lessons) {
-      const p = getProgress(l.name);
+      const p = getProgress(topic, l.name);
       if (p) map[l.name] = p;
     }
     setProgMap(map);
-  }, [lessons]);
+  }, [lessons, progressResetKey, topic]);
 
-  const handleReset = (lessonName: string, e: React.MouseEvent) => {
+  const handleDelete = (lessonName: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    resetProgress(lessonName);
+    onDelete(lessonName);
+    resetProgress(topic, lessonName);
     setProgMap((prev) => {
       const next = { ...prev };
       delete next[lessonName];
@@ -123,9 +152,9 @@ export default function LessonPicker({ lessons, isLoading, onSelect }: LessonPic
           )}
         </div>
         <h2 className="text-3xl font-extrabold text-white tracking-tight mb-2 drop-shadow-lg">
-          Chọn bài để học
+          Chọn bài học để học
         </h2>
-        <p className="text-white/55 text-sm">Bấm vào hình thức học để bắt đầu ngay.</p>
+        <p className="text-white/55 text-sm">Chọn bài học và hình thức học để bắt đầu ngay.</p>
       </div>
 
       {/* ── 2-column grid ── */}
@@ -166,16 +195,14 @@ export default function LessonPicker({ lessons, isLoading, onSelect }: LessonPic
                     </p>
                   </div>
 
-                  {/* Reset button — only when there's progress */}
-                  {prog && (
-                    <button
-                      onClick={(e) => handleReset(lesson.name, e)}
-                      className="shrink-0 p-1.5 rounded-lg text-white/25 hover:text-white/70 hover:bg-white/10 transition-all"
-                      title="Học lại từ đầu"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  {/* Delete button — only visible on hover */}
+                  <button
+                    onClick={(e) => handleDelete(lesson.name, e)}
+                    className="shrink-0 p-1.5 rounded-lg text-white/25 hover:text-white/70 hover:bg-white/10 transition-all opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto"
+                    title="Xóa bài học"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
                 {/* ── Progress bar ── */}
@@ -190,8 +217,7 @@ export default function LessonPicker({ lessons, isLoading, onSelect }: LessonPic
                         done
                           ? 'bg-emerald-400'
                           : STRIPE_BARS[i % STRIPE_BARS.length]
-                      }`}
-                      style={{ width: `${pct}%` }}
+                      } ${getProgressWidthClass(pct)}`}
                     />
                   </div>
                 </div>

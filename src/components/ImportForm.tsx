@@ -5,10 +5,12 @@ import { Upload, Loader2, CheckCircle, FileText, BookMarked, Eye, AlertCircle } 
 import { parseVocabularyText, ParsedItem } from '@/lib/parseVocabulary';
 
 interface ImportFormProps {
-  onSuccess: () => void;
+  onSuccess: (topic?: string) => void;
+  topic?: string | null;
 }
 
-export default function ImportForm({ onSuccess }: ImportFormProps) {
+export default function ImportForm({ onSuccess, topic: initialTopic }: ImportFormProps) {
+  const [topic, setTopic] = useState(initialTopic ?? '');
   const [lesson, setLesson] = useState('');
   const [text, setText] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -30,6 +32,9 @@ export default function ImportForm({ onSuccess }: ImportFormProps) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!topic.trim() && initialTopic) {
+      setTopic(initialTopic);
+    }
     if (!lesson.trim()) {
       const name = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
       setLesson(name);
@@ -52,7 +57,7 @@ export default function ImportForm({ onSuccess }: ImportFormProps) {
   // ── Submit ──────────────────────────────────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!text.trim() || !lesson.trim()) return;
+    if (!topic.trim() || !text.trim() || !lesson.trim()) return;
 
     if (parsed.length === 0) {
       setStatus({ type: 'error', message: 'Không tìm thấy từ vựng hợp lệ. Vui lòng kiểm tra lại dữ liệu.' });
@@ -63,10 +68,23 @@ export default function ImportForm({ onSuccess }: ImportFormProps) {
     setStatus({ type: null, message: '' });
 
     try {
+      const topicName = topic.trim();
+      const lessonName = lesson.trim();
+
+      const topicRes = await fetch('/api/topics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: topicName }),
+      });
+      if (!topicRes.ok && topicRes.status !== 409) {
+        const err = await topicRes.json();
+        throw new Error(err.error || 'Không thể tạo chủ đề mới.');
+      }
+
       const res = await fetch('/api/vocabulary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: parsed, lesson: lesson.trim() }),
+        body: JSON.stringify({ items: parsed, topic: topicName, lesson: lessonName }),
       });
 
       const data = await res.json();
@@ -74,14 +92,14 @@ export default function ImportForm({ onSuccess }: ImportFormProps) {
 
       setStatus({
         type: 'success',
-        message: `Đã lưu thành công ${data.count} từ vựng vào "${lesson.trim()}"!`,
+        message: `Đã lưu thành công ${data.count} từ vựng vào "${topicName} / ${lessonName}"!`,
       });
       setText('');
       setLesson('');
       setShowPreview(false);
 
       setTimeout(() => {
-        onSuccess();
+        onSuccess(topicName);
         setStatus({ type: null, message: '' });
       }, 2000);
     } catch (err: unknown) {
@@ -137,6 +155,23 @@ export default function ImportForm({ onSuccess }: ImportFormProps) {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        {/* Topic name */}
+        <div>
+          <label className="block text-sm font-semibold text-slate-700 mb-2">
+            <span className="flex items-center gap-1.5">
+              <BookMarked className="w-4 h-4 text-blue-500" />
+              Tên chủ đề <span className="text-red-500">*</span>
+            </span>
+          </label>
+          <input
+            type="text"
+            value={topic}
+            onChange={(e) => setTopic(e.target.value)}
+            placeholder="VD: Giao tiếp hàng ngày"
+            className="w-full px-4 py-3 border-2 border-slate-100 rounded-2xl bg-slate-50/50 hover:bg-slate-50 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all text-slate-700 placeholder:text-slate-400"
+          />
+        </div>
+
         {/* Lesson name */}
         <div>
           <label className="block text-sm font-semibold text-slate-700 mb-2">

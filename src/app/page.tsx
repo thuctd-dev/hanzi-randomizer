@@ -6,7 +6,8 @@ import Flashcard from '@/components/Flashcard';
 import ImportForm from '@/components/ImportForm';
 import GridView, { Vocabulary } from '@/components/GridView';
 import FillInGrid from '@/components/FillInGrid';
-import LessonPicker, { Lesson, StudyMode, saveProgress, resetProgress, getProgress } from '@/components/LessonPicker';
+import LessonPicker, { Lesson, StudyMode, saveProgress, getProgress } from '@/components/LessonPicker';
+import TopicPicker, { Topic } from '@/components/TopicPicker';
 import {
   BookOpen, Database, Loader2, LayoutGrid, Layers,
   PencilLine, ArrowLeft,
@@ -26,8 +27,11 @@ const FADE_DURATION  = 900;   // ms crossfade
 
 export default function Home() {
   // ── lesson + vocab state ──────────────────────────────────
+  const [topics, setTopics]                 = useState<Topic[]>([]);
+  const [topicsLoading, setTopicsLoading]   = useState(true);
+  const [activeTopic, setActiveTopic]       = useState<string | null>(null);
   const [lessons, setLessons]               = useState<Lesson[]>([]);
-  const [lessonsLoading, setLessonsLoading] = useState(true);
+  const [lessonsLoading, setLessonsLoading] = useState(false);
   const [activeLesson, setActiveLesson]     = useState<Lesson | null>(null);
   const [viewMode, setViewMode]             = useState<StudyMode>('flashcard');
   const [vocabularies, setVocabularies]     = useState<Vocabulary[]>([]);
@@ -73,22 +77,50 @@ export default function Home() {
   };
 
   // ── data fetching ─────────────────────────────────────────
-  const fetchLessons = useCallback(async () => {
+  const fetchTopics = useCallback(async () => {
+    setTopicsLoading(true);
+    try {
+      const res = await fetch('/api/topics');
+      const json = await res.json();
+      setTopics(json.data ?? []);
+    } catch (e) { console.error(e); }
+    finally { setTopicsLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    const loadTopics = async () => {
+      await fetchTopics();
+    };
+    void loadTopics();
+  }, [fetchTopics]);
+
+  const fetchLessons = useCallback(async (topicName?: string) => {
     setLessonsLoading(true);
     try {
-      const res  = await fetch('/api/lessons');
-      const json = await res.json();
-      setLessons(json.data ?? []);
+      if (!topicName) {
+        setLessons([]);
+      } else {
+        const res = await fetch(`/api/topics/${encodeURIComponent(topicName)}`);
+        const json = await res.json();
+        setLessons(json.data ?? []);
+        setActiveLesson(null);
+        setVocabularies([]);
+        setCurrentIndex(0);
+      }
     } catch (e) { console.error(e); }
     finally { setLessonsLoading(false); }
   }, []);
 
-  useEffect(() => { fetchLessons(); }, [fetchLessons]);
-
-  const fetchVocabularies = useCallback(async (lessonName: string) => {
+  const fetchVocabularies = useCallback(async (topicName?: string, lessonName?: string, excludeRadicals = false) => {
     setVocabLoading(true);
     try {
-      const res  = await fetch(`/api/vocabulary?lesson=${encodeURIComponent(lessonName)}`);
+      const params = new URLSearchParams();
+      if (topicName) params.append('topic', topicName);
+      if (lessonName) params.append('lesson', lessonName);
+      if (excludeRadicals) params.append('excludeRadicals', '1');
+
+      const url = `/api/vocabulary${params.toString() ? `?${params.toString()}` : ''}`;
+      const res = await fetch(url);
       const json = await res.json();
       if (json.data?.length) {
         setVocabularies([...json.data].sort(() => Math.random() - 0.5));
@@ -100,28 +132,133 @@ export default function Home() {
     finally { setVocabLoading(false); }
   }, []);
 
+  const handleSelectTopic = useCallback((topicName: string) => {
+    setActiveTopic(topicName);
+    setActiveLesson(null);
+    setVocabularies([]);
+    setCurrentIndex(0);
+    fetchLessons(topicName);
+  }, [fetchLessons]);
+
+  const handleBackToTopics = useCallback(() => {
+    setActiveTopic(null);
+    setActiveLesson(null);
+    setLessons([]);
+    setVocabularies([]);
+    setCurrentIndex(0);
+  }, []);
+
+  const handleStartRandomReview = useCallback(async () => {
+    setVocabLoading(true);
+    try {
+      const res  = await fetch('/api/vocabulary?excludeRadicals=1');
+      const json = await res.json();
+      if (json.data?.length) {
+        const pool = [...json.data].sort(() => Math.random() - 0.5).slice(0, 50);
+        setVocabularies(pool);
+        setCurrentIndex(0);
+        setActiveLesson({ name: 'Ôn 50 câu ngẫu nhiên', count: Math.min(50, pool.length) });
+        setViewMode('flashcard');
+        seenIds.current = new Set();
+      }
+    } catch (e) { console.error(e); }
+    finally { setVocabLoading(false); }
+  }, []);
+
+  const handleStartRadicals = useCallback(async () => {
+    setVocabLoading(true);
+    try {
+      const res  = await fetch('/api/vocabulary?lesson=Bộ%20thủ');
+      const json = await res.json();
+      if (json.data?.length) {
+        const pool = [...json.data].sort(() => Math.random() - 0.5);
+        setVocabularies(pool);
+        setCurrentIndex(0);
+        setActiveLesson({ name: 'Bộ thủ', count: pool.length });
+        setViewMode('flashcard');
+        seenIds.current = new Set();
+      }
+    } catch (e) { console.error(e); }
+    finally { setVocabLoading(false); }
+  }, []);
+
   // ── lesson selection ──────────────────────────────────────
   const handleSelectLesson = (lesson: Lesson, mode: StudyMode) => {
     setActiveLesson(lesson);
     setViewMode(mode);
     seenIds.current = new Set();
-    fetchVocabularies(lesson.name);
+    fetchVocabularies(activeTopic ?? undefined, lesson.name);
   };
 
-  const handleBackToLessons = () => {
+  const handleBackToLessons = useCallback(() => {
     setActiveLesson(null);
+    setViewMode('flashcard');
     setVocabularies([]);
-    seenIds.current = new Set();
-  };
+    setCurrentIndex(0);
+  }, []);
+
+  const handleDeleteLesson = useCallback(async (lessonName: string) => {
+    if (!activeTopic) return;
+    setLessonsLoading(true);
+    try {
+      const res = await fetch(`/api/topics/${encodeURIComponent(activeTopic)}?name=${encodeURIComponent(lessonName)}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Xóa bài học thất bại');
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      await fetchLessons(activeTopic);
+      if (activeLesson?.name === lessonName) {
+        handleBackToLessons();
+      }
+      setLessonsLoading(false);
+    }
+  }, [activeLesson, activeTopic, fetchLessons, handleBackToLessons]);
+
+  const handleDeleteTopic = useCallback(async (topicName: string) => {
+    setTopicsLoading(true);
+    try {
+      const res = await fetch(`/api/topics?name=${encodeURIComponent(topicName)}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || 'Xóa chủ đề thất bại');
+      }
+      if (activeTopic === topicName) {
+        handleBackToTopics();
+      }
+      await fetchTopics();
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setTopicsLoading(false);
+    }
+  }, [activeTopic, fetchTopics, handleBackToTopics]);
+
+  const handleImportSuccess = useCallback(async (importedTopic?: string) => {
+    await fetchTopics();
+    if (importedTopic) {
+      setActiveTopic(importedTopic);
+      await fetchLessons(importedTopic);
+    } else if (activeTopic) {
+      await fetchLessons(activeTopic);
+    }
+    setIsImporting(false);
+  }, [activeTopic, fetchLessons, fetchTopics]);
 
   // ── mark a vocab as seen and persist progress ─────────────
   const markSeen = useCallback((vocabId: string) => {
     if (!activeLesson) return;
     seenIds.current.add(vocabId);
-    const existing = getProgress(activeLesson.name);
+    const existing = getProgress(activeTopic, activeLesson.name);
     const seen = seenIds.current.size;
     const total = vocabularies.length || activeLesson.count;
-    saveProgress(activeLesson.name, {
+    saveProgress(activeTopic, activeLesson.name, {
       seen,
       total,
       lastMode: viewMode,
@@ -129,7 +266,7 @@ export default function Home() {
       // preserve completedAt if already set
       ...(existing?.completedAt && seen < total ? { completedAt: existing.completedAt } : {}),
     });
-  }, [activeLesson, vocabularies.length, viewMode]);
+  }, [activeLesson, activeTopic, vocabularies.length, viewMode]);
 
   // ── flashcard nav ─────────────────────────────────────────
   const handleNext = () => {
@@ -179,11 +316,7 @@ export default function Home() {
         />
         {/* Top layer — CURRENT photo, fades out to reveal next */}
         <div
-          className="absolute inset-0 transition-opacity"
-          style={{
-            opacity: fading ? 0 : 1,
-            transitionDuration: `${FADE_DURATION}ms`,
-          }}
+          className={`absolute inset-0 transition-opacity duration-900 ${fading ? 'opacity-0' : 'opacity-100'}`}
         >
           <Image
             src={BG_PHOTOS[current].src}
@@ -208,8 +341,7 @@ export default function Home() {
       <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2 pointer-events-none">
         {/* Caption */}
         <span
-          className="text-white/50 text-[10px] font-medium tracking-widest uppercase transition-opacity duration-700"
-          style={{ opacity: fading ? 0 : 1 }}
+          className={`text-white/50 text-[10px] font-medium tracking-widest uppercase transition-opacity duration-700 ${fading ? 'opacity-0' : 'opacity-100'}`}
         >
           {BG_PHOTOS[current].caption}
         </span>
@@ -256,7 +388,7 @@ export default function Home() {
                   Hanzi<span className="text-red-400">Random</span>
                 </h1>
                 {activeLesson ? (
-                  <p className="text-[11px] font-semibold text-red-300 leading-none mt-0.5 truncate max-w-[180px]">
+                  <p className="text-[11px] font-semibold text-red-300 leading-none mt-0.5 truncate max-w-45">
                     {activeLesson.name}
                   </p>
                 ) : (
@@ -330,39 +462,110 @@ export default function Home() {
         {/* Import panel */}
         {isImporting && (
           <div className="mb-8 animate-fade-up">
-            <ImportForm onSuccess={() => {
-              fetchLessons();
-              if (activeLesson) fetchVocabularies(activeLesson.name);
-              setIsImporting(false);
-            }} />
+            <ImportForm onSuccess={(topic) => handleImportSuccess(topic)} topic={activeTopic} />
+          </div>
+        )}
+
+        {!activeLesson && activeTopic && lessons.length > 0 && (
+          <div className="sticky top-16 z-40 mb-4 -mx-4 px-4 py-3 bg-slate-950/85 backdrop-blur-xl border-b border-white/10 overflow-x-auto">
+            <div className="flex flex-wrap items-center gap-3 min-w-max">
+              <div className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/80">
+                <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400" />
+                Chủ đề: {activeTopic}
+              </div>
+              <button
+                onClick={handleBackToTopics}
+                className="shrink-0 rounded-full bg-white/10 hover:bg-white/20 text-white px-4 py-2 text-xs font-semibold transition-all"
+              >
+                Trở về chủ đề
+              </button>
+              {lessons.map((lesson) => (
+                <button
+                  key={lesson.name}
+                  onClick={() => handleSelectLesson(lesson, 'flashcard')}
+                  className="shrink-0 rounded-full bg-white/10 hover:bg-white/20 text-white px-4 py-2 text-xs font-semibold transition-all whitespace-nowrap"
+                >
+                  {lesson.name}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
         {/* ── Lesson picker (no active lesson) ── */}
         {!activeLesson ? (
-          lessonsLoading ? (
-            <div className="flex flex-col items-center justify-center h-[60vh] gap-3 text-white/60">
-              <Loader2 className="w-8 h-8 animate-spin text-red-400" />
-              <p className="text-sm font-medium">Đang tải...</p>
-            </div>
-          ) : lessons.length > 0 ? (
-            <LessonPicker lessons={lessons} isLoading={false} onSelect={handleSelectLesson} />
-          ) : (
-            /* Empty state */
-            <div className="text-center py-28 max-w-sm mx-auto animate-fade-up">
-              <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur border border-white/15 flex items-center justify-center mx-auto mb-5">
-                <BookOpen className="w-8 h-8 text-white/50" />
+          activeTopic ? (
+            lessonsLoading ? (
+              <div className="flex flex-col items-center justify-center h-[60vh] gap-3 text-white/60">
+                <Loader2 className="w-8 h-8 animate-spin text-red-400" />
+                <p className="text-sm font-medium">Đang tải...</p>
               </div>
-              <h3 className="text-2xl font-extrabold text-white mb-2 drop-shadow">Chưa có bài học nào</h3>
-              <p className="text-white/50 text-sm mb-8 leading-relaxed">
-                Nhập từ vựng và đặt tên bài học để bắt đầu học.
-              </p>
-              <button
-                onClick={() => setIsImporting(true)}
-                className="px-7 py-3 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold rounded-2xl transition-all shadow-xl shadow-red-500/30 hover:-translate-y-0.5 active:scale-95"
-              >
-                Thêm bài đầu tiên
-              </button>
+            ) : lessons.length > 0 ? (
+              <div className="space-y-4 animate-fade-up">
+                <div className="rounded-3xl bg-white/10 border border-white/10 p-4 text-white/70">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">Ôn lại toàn bộ</h3>
+                      <p className="text-[11px] text-white/50 mt-1 max-w-2xl">
+                        Chọn để ôn ngẫu nhiên 50 câu từ tất cả các bài học hiện có. Bộ thủ không được tính vào ôn 50 câu này.
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full sm:w-auto">
+                      <button
+                        onClick={handleStartRandomReview}
+                        className="w-full px-4 py-3 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-semibold rounded-3xl transition-all shadow-lg shadow-red-500/20"
+                      >
+                        Ôn 50 câu ngẫu nhiên
+                      </button>
+                      <button
+                        onClick={handleStartRadicals}
+                        className="w-full px-4 py-3 bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white font-semibold rounded-3xl transition-all shadow-lg shadow-blue-500/20"
+                      >
+                        Học 214 bộ thủ
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <LessonPicker
+                topic={activeTopic}
+                lessons={lessons}
+                isLoading={false}
+                onSelect={handleSelectLesson}
+                onDelete={handleDeleteLesson}
+              />
+              </div>
+            ) : (
+              <div className="text-center py-28 max-w-sm mx-auto animate-fade-up">
+                <div className="w-16 h-16 rounded-2xl bg-white/10 backdrop-blur border border-white/15 flex items-center justify-center mx-auto mb-5">
+                  <BookOpen className="w-8 h-8 text-white/50" />
+                </div>
+                <h3 className="text-2xl font-extrabold text-white mb-2 drop-shadow">Chưa có bài học trong chủ đề này</h3>
+                <p className="text-white/50 text-sm mb-8 leading-relaxed">
+                  Thêm bài học mới hoặc chọn chủ đề khác để bắt đầu học.
+                </p>
+                <button
+                  onClick={handleBackToTopics}
+                  className="px-7 py-3 bg-red-500 hover:bg-red-600 active:bg-red-700 text-white font-bold rounded-2xl transition-all shadow-xl shadow-red-500/30 hover:-translate-y-0.5 active:scale-95"
+                >
+                  Chọn chủ đề khác
+                </button>
+              </div>
+            )
+          ) : (
+            <div className="space-y-8 animate-fade-up">
+              {topicsLoading ? (
+                <div className="flex flex-col items-center justify-center h-[60vh] gap-3 text-white/60">
+                  <Loader2 className="w-8 h-8 animate-spin text-red-400" />
+                  <p className="text-sm font-medium">Đang tải chủ đề...</p>
+                </div>
+              ) : (
+                <TopicPicker
+                  topics={topics}
+                  isLoading={topicsLoading}
+                  onSelect={handleSelectTopic}
+                  onDelete={handleDeleteTopic}
+                />
+              )}
             </div>
           )
         ) : (
@@ -416,7 +619,9 @@ export default function Home() {
                   </div>
                   <GridView
                     vocabularies={vocabularies}
-                    onDataChange={() => fetchVocabularies(activeLesson.name)}
+                    topic={activeTopic}
+                    lesson={activeLesson?.name ?? ''}
+                    onDataChange={() => fetchVocabularies(activeTopic ?? undefined, activeLesson?.name ?? undefined)}
                   />
                 </div>
               )}

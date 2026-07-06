@@ -4,6 +4,7 @@ export interface IVocabulary extends Document {
   hanzi: string;
   pinyin: string;
   meaning: string;
+  topic: string;
   lesson: string;
   createdAt: Date;
 }
@@ -12,7 +13,8 @@ const VocabularySchema: Schema = new Schema({
   hanzi: { type: String, required: true },
   pinyin: { type: String, required: true },
   meaning: { type: String, required: true },
-  lesson: { type: String, required: true, default: 'Bài 1' },
+  topic: { type: String, required: true },
+  lesson: { type: String, required: true },
   createdAt: { type: Date, default: Date.now },
 });
 
