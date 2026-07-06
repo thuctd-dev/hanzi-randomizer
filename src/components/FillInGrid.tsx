@@ -47,17 +47,17 @@ const TONE_MAP: Record<string, string> = {
 };
 
 /**
- * Converts pinyin with tone marks OR tone numbers into a canonical
+ * Converts pinyin with tone marks or tone numbers into a canonical
  * "base+number" form for comparison.
  *
- * nǐ hǎo  → ni3 hao3
- * ni3 hao3 → ni3 hao3
- * ni hao   → ni hao
+ * nǐ hǎo   → ni3 hao3
+ * ni3 hao3  → ni3 hao3
+ * ni hao    → ni hao
  */
 function normalisePinyin(s: string): string {
   let result = s.toLowerCase().trim();
+  result = result.replace(/u:/g, 'v');
   for (const [marked, plain] of Object.entries(TONE_MAP)) {
-    // replaceAll with a string literal — safe and no regex escaping needed
     result = result.split(marked).join(plain);
   }
   return result.replace(/\s+/g, ' ');
@@ -68,12 +68,8 @@ function normalise(s: string): string {
 }
 
 function pinyinMatch(input: string, answer: string): boolean {
-  if (normalise(input) === normalise(answer)) return true;
-  if (normalisePinyin(input) === normalisePinyin(answer)) return true;
-  // lenient: ignore tone numbers entirely
-  const bare = (s: string) =>
-    normalisePinyin(s).replace(/[1-5]/g, '').replace(/\s+/g, ' ').trim();
-  return bare(input) === bare(answer);
+  if (!/[1-4]/.test(input)) return false;
+  return normalisePinyin(input) === normalisePinyin(answer);
 }
 
 /**
@@ -109,8 +105,7 @@ const FIELD_LABELS: Record<HiddenField, string> = {
 };
 
 export default function FillInGrid({ vocabularies, onMarkSeen }: FillInGridProps) {
-  const [rows, setRows]           = useState<RowState[]>(() => buildRows(vocabularies));
-  const [submitted, setSubmitted] = useState(false);
+  const [rows, setRows] = useState<RowState[]>(() => buildRows(vocabularies));
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const score    = useMemo(() => rows.filter((r) => r.status === 'correct').length, [rows]);
@@ -179,12 +174,10 @@ export default function FillInGrid({ vocabularies, onMarkSeen }: FillInGridProps
         return { ...r, status: correct ? 'correct' : 'wrong' };
       })
     );
-    setSubmitted(true);
   }, [onMarkSeen]);
 
   const handleReset = useCallback(() => {
     setRows(buildRows(vocabularies));
-    setSubmitted(false);
     setTimeout(() => inputRefs.current[0]?.focus(), 50);
   }, [vocabularies]);
 
@@ -231,10 +224,8 @@ export default function FillInGrid({ vocabularies, onMarkSeen }: FillInGridProps
       {rows.some((r) => r.hidden === 'pinyin' && r.status === 'idle') && (
         <p className="text-[11px] text-white/40 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 leading-relaxed">
           💡 <span className="font-semibold text-white/55">Bính âm:</span>{' '}
-          nhập dấu thanh hoặc số đều được —{' '}
-          <span className="font-mono text-white/50">nǐ hǎo</span>{' = '}
-          <span className="font-mono text-white/50">ni3 hao3</span>{' = '}
-          <span className="font-mono text-white/50">ni hao</span>
+          Nhập đúng số tone để thể hiện dấu: <span className="font-mono text-white/50">ni3 hao3</span>.{' '}
+          Âm <span className="font-mono text-white/50">ü</span> có thể viết thành <span className="font-mono text-white/50">v</span>.
         </p>
       )}
 
@@ -300,7 +291,7 @@ export default function FillInGrid({ vocabularies, onMarkSeen }: FillInGridProps
                           answer={row.vocab.pinyin}
                           showAnswer={row.showAnswer}
                           onToggleAnswer={() => toggleAnswer(idx)}
-                          placeholder="nǐ hǎo  hoặc  ni3 hao3"
+                          placeholder="ni3 hao3"
                           isPinyin
                         />
                       ) : (

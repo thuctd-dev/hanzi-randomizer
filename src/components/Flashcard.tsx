@@ -27,7 +27,7 @@ const MODE_LABELS: Record<DisplayMode, string> = {
 export default function Flashcard({
   hanzi, pinyin, meaning, total, index, onNext, onPrev, onShuffle,
 }: FlashcardProps) {
-  const [mode, setMode]           = useState<DisplayMode>('read');
+  const mode: DisplayMode = 'read';
   const [isRevealed, setIsRevealed] = useState(false);
   const [direction, setDirection] = useState<1 | -1>(1);
   const [autoRead, setAutoRead]   = useState(true); // auto-speak on reveal
@@ -46,9 +46,8 @@ export default function Flashcard({
   // ── reset on card change ──────────────────────────────────
   useEffect(() => {
     stop();
-    const modes: DisplayMode[] = ['read', 'listen-write', 'translate'];
-    setMode(modes[Math.floor(Math.random() * modes.length)]);
-    setIsRevealed(false);
+    // Defer resetting reveal state to avoid synchronous setState in effect
+    setTimeout(() => setIsRevealed(false), 0);
   }, [hanzi, pinyin, meaning]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── auto-read on reveal ───────────────────────────────────
@@ -58,6 +57,8 @@ export default function Flashcard({
       speak(hanzi);
     }
   }, [isRevealed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const reveal = useCallback(() => { setIsRevealed(true); }, []);
 
   // ── keyboard shortcuts ────────────────────────────────────
   useEffect(() => {
@@ -70,9 +71,7 @@ export default function Flashcard({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isRevealed, onNext, onPrev, hanzi]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const reveal = () => { if (!isRevealed) setIsRevealed(true); };
+  }, [isRevealed, onNext, onPrev, hanzi, reveal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goNext = useCallback(() => { stop(); setDirection(1);  onNext(); }, [onNext, stop]);
   const goPrev = useCallback(() => { stop(); setDirection(-1); onPrev?.(); }, [onPrev, stop]);
@@ -95,7 +94,7 @@ export default function Flashcard({
           <span className="text-white/70">{index + 1} / {total}</span>
 
           {/* Mode badge */}
-          <span className="bg-white/15 backdrop-blur px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider text-white/60 max-w-[180px] truncate">
+          <span className="bg-white/15 backdrop-blur px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider text-white/60 max-w-45 truncate">
             {MODE_LABELS[mode]}
           </span>
 
@@ -144,61 +143,23 @@ export default function Flashcard({
           {/* Top accent stripe */}
           <div className={`h-1 w-full transition-colors duration-500 ${isRevealed ? 'bg-green-400' : 'bg-red-400'}`} />
 
-          <div className="px-8 py-10 flex flex-col items-center gap-5 min-h-[290px] justify-center">
+          <div className="px-8 py-10 flex flex-col items-center gap-5 min-h-72.5 justify-center">
 
             {/* ── Hanzi ── */}
-            {(mode === 'read' || isRevealed) ? (
-              <motion.p
-                initial={{ opacity: 0, scale: 0.85 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className={`hanzi font-black text-center ${hanziSize} ${
-                  isRevealed && mode !== 'read' ? 'text-green-600' : 'text-slate-900'
-                }`}
-              >
-                {hanzi}
-              </motion.p>
-            ) : (
-              <div className="flex items-center justify-center h-[88px]">
-                <span className="hanzi text-6xl text-slate-200 font-black tracking-widest">?</span>
-              </div>
-            )}
+            <motion.p
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={`hanzi font-black text-center ${hanziSize} ${
+                isRevealed && mode !== 'read' ? 'text-green-600' : 'text-slate-900'
+              }`}
+            >
+              {hanzi}
+            </motion.p>
 
             {isRevealed && <div className="w-12 h-px bg-slate-200" />}
 
-            {/* ── Pinyin ── */}
-            {(mode === 'listen-write' || isRevealed) ? (
-              <motion.p
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.05 }}
-                className={`text-xl font-semibold tracking-wide text-center ${
-                  isRevealed && mode !== 'listen-write' ? 'text-green-600' : 'text-slate-600'
-                }`}
-              >
-                {pinyin}
-              </motion.p>
-            ) : (
-              <div className="h-5 w-20 rounded-full animate-shimmer" />
-            )}
-
-            {/* ── Meaning ── */}
-            {(mode === 'translate' || isRevealed) ? (
-              <motion.p
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className={`text-sm text-center leading-relaxed max-w-[220px] ${
-                  isRevealed && mode !== 'translate' ? 'text-green-600' : 'text-slate-500'
-                }`}
-              >
-                {meaning}
-              </motion.p>
-            ) : (
-              <div className="flex flex-col items-center gap-1.5">
-                <div className="h-3.5 w-32 rounded-full animate-shimmer" />
-                <div className="h-3.5 w-20 rounded-full animate-shimmer" />
-              </div>
-            )}
+            {/* Only show Hanzi on the flashcard to focus on characters */}
+            <div className="h-4" />
 
             {/* ── Tap hint (before reveal) ── */}
             {!isRevealed && (
@@ -223,7 +184,7 @@ export default function Flashcard({
                 onClick={e => e.stopPropagation()}
               >
                 <button
-                  onClick={() => isSpeaking ? stop() : speak(hanzi)}
+                    onClick={() => { if (isSpeaking) { stop(); } else { speak(hanzi); } }}
                   className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all active:scale-95 ${
                     isSpeaking
                       ? 'bg-red-500 text-white shadow-md shadow-red-500/25'
@@ -232,7 +193,7 @@ export default function Flashcard({
                   title="Đọc to (R)"
                 >
                   <Volume2 className={`w-4 h-4 ${isSpeaking ? 'animate-pulse' : ''}`} />
-                  <span className="hanzi mr-1">{hanzi}</span>
+                    <span className="hanzi mr-1">{hanzi}</span>
                   <span className="text-xs opacity-70">{isSpeaking ? 'đang đọc...' : 'nghe phát âm'}</span>
                 </button>
 
@@ -268,7 +229,9 @@ export default function Flashcard({
         <button
           onClick={goPrev}
           disabled={!onPrev}
-          className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/15 backdrop-blur border border-white/20 text-white/70 hover:text-white hover:bg-white/25 disabled:opacity-25 disabled:cursor-not-allowed transition-all shadow-sm active:scale-95"
+            className="flex items-center justify-center w-12 h-12 rounded-2xl bg-white/15 backdrop-blur border border-white/20 text-white/70 hover:text-white hover:bg-white/25 disabled:opacity-25 disabled:cursor-not-allowed transition-all shadow-sm active:scale-95"
+            aria-label="Trước"
+            title="Trước"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
@@ -276,13 +239,14 @@ export default function Flashcard({
         {/* Read-aloud button — prominent shortcut */}
         {isSupported && (
           <button
-            onClick={e => { e.stopPropagation(); isSpeaking ? stop() : speak(hanzi); }}
+            onClick={e => { e.stopPropagation(); if (isSpeaking) { stop(); } else { speak(hanzi); } }}
             className={`flex items-center justify-center w-12 h-12 rounded-2xl transition-all active:scale-95 border ${
               isSpeaking
                 ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/30'
                 : 'bg-white/15 backdrop-blur border-white/20 text-white/70 hover:bg-white/25 hover:text-white'
             }`}
             title="Đọc to (R)"
+            aria-label="Đọc to"
           >
             <Volume2 className={`w-5 h-5 ${isSpeaking ? 'animate-pulse' : ''}`} />
           </button>

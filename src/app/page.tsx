@@ -398,7 +398,7 @@ export default function Home() {
                   <div className="mb-5">
                     <h2 className="text-lg font-extrabold text-white drop-shadow">Điền từ vào chỗ trống</h2>
                     <p className="text-white/50 text-xs mt-1">
-                      Mỗi hàng ẩn ngẫu nhiên một trường. Nhấn Enter để chuyển ô.
+                      Mỗi hàng ẩn ngẫu nhiên một trường. Nhập bính âm bằng dấu thanh, số hoặc ký tự thay thế `v` cho `ü`. Nhấn Enter để chuyển ô.
                     </p>
                   </div>
                   <FillInGrid vocabularies={vocabularies} onMarkSeen={markSeen} />
