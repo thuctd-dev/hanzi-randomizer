@@ -158,8 +158,34 @@ export default function Flashcard({
 
             {isRevealed && <div className="w-12 h-px bg-slate-200" />}
 
-            {/* Only show Hanzi on the flashcard to focus on characters */}
-            <div className="h-4" />
+            {/* Before reveal: only Hanzi. After reveal: show pinyin and meaning */}
+            {isRevealed ? (
+              <>
+                <motion.p
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.05 }}
+                  className={`text-xl font-semibold tracking-wide text-center ${
+                    isRevealed ? 'text-green-600' : 'text-slate-600'
+                  }`}
+                >
+                  {pinyin}
+                </motion.p>
+
+                <motion.p
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className={`text-sm text-center leading-relaxed max-w-55 ${
+                    isRevealed ? 'text-green-600' : 'text-slate-500'
+                  }`}
+                >
+                  {meaning}
+                </motion.p>
+              </>
+            ) : (
+              <div className="h-4" />
+            )}
 
             {/* ── Tap hint (before reveal) ── */}
             {!isRevealed && (
