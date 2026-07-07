@@ -386,6 +386,34 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-4 h-11 flex items-center gap-2 overflow-x-auto scrollbar-none">
           {topicsLoading ? <Loader2 className="w-3.5 h-3.5 text-white/40 animate-spin shrink-0" /> : (
             <>
+              {/* ── Bộ thủ — ghim cố định đầu bar ── */}
+              {(() => {
+                const isActive = activeLesson?.name === 'Bộ thủ';
+                return (
+                  <button
+                    onClick={() => {
+                      setActiveLesson({ name: 'Bộ thủ', count: 52 });
+                      setActiveTopic(null);
+                      setViewMode('flashcard');
+                      seenIds.current = new Set();
+                      fetchVocabularies('Bộ thủ', undefined);
+                    }}
+                    className={`shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold transition-all whitespace-nowrap
+                      ${isActive
+                        ? 'bg-amber-500 text-white shadow-md shadow-amber-500/30'
+                        : 'bg-amber-500/15 text-amber-300 hover:bg-amber-500/30 hover:text-amber-200 border border-amber-500/30'}`}
+                  >
+                    <Pin className="w-2.5 h-2.5 shrink-0" />
+                    Bộ thủ
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/20' : 'bg-amber-500/20'}`}>
+                      52
+                    </span>
+                  </button>
+                );
+              })()}
+
+              {/* divider */}
+              <div className="w-px h-4 bg-white/10 shrink-0" />
               {sortedTopics.map((topic) => {
                 const isActive = activeTopic === topic.name && !activeLesson;
                 const isPinned = pinnedTopics.has(topic.name);

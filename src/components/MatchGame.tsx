@@ -12,7 +12,7 @@ interface MatchGameProps {
 interface Card {
   id: string;       // vocab id
   text: string;
-  type: 'hanzi' | 'meaning';
+  type: 'hanzi' | 'pinyin';
   matched: boolean;
   wrong: boolean;
 }
@@ -21,9 +21,8 @@ const BATCH = 8;
 
 function buildCards(vocabularies: Vocabulary[]): { left: Card[]; right: Card[] } {
   const pool = [...vocabularies].sort(() => Math.random() - 0.5).slice(0, BATCH);
-  const left: Card[]  = pool.map(v => ({ id: v.id, text: v.hanzi,   type: 'hanzi',   matched: false, wrong: false }));
-  const right: Card[] = pool.map(v => ({ id: v.id, text: v.meaning, type: 'meaning', matched: false, wrong: false }));
-  // shuffle right column independently
+  const left: Card[]  = pool.map(v => ({ id: v.id, text: v.hanzi,  type: 'hanzi',  matched: false, wrong: false }));
+  const right: Card[] = pool.map(v => ({ id: v.id, text: v.pinyin, type: 'pinyin', matched: false, wrong: false }));
   right.sort(() => Math.random() - 0.5);
   return { left, right };
 }
@@ -171,7 +170,7 @@ export default function MatchGame({ vocabularies, onMarkSeen }: MatchGameProps) 
 
         {/* Right — Meaning */}
         <div className="flex flex-col gap-2">
-          <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest text-center mb-1">Nghĩa</p>
+          <p className="text-white/40 text-[10px] font-bold uppercase tracking-widest text-center mb-1">Bính âm</p>
           {right.map(card => (
             <button
               key={card.id}
@@ -194,7 +193,7 @@ export default function MatchGame({ vocabularies, onMarkSeen }: MatchGameProps) 
       </div>
 
       <p className="text-center text-[11px] text-white/30">
-        Click một ô bên trái rồi click ô tương ứng bên phải để nối cặp
+        Click Hán tự rồi click Bính âm tương ứng để nối cặp
       </p>
     </div>
   );
