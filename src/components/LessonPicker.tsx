@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   BookOpen, Layers, LayoutGrid, PencilLine,
   ChevronRight, BookMarked, Trash2, CheckCircle,
+  Plus, Loader2,
 } from 'lucide-react';
 
 export interface Lesson {
@@ -11,7 +12,7 @@ export interface Lesson {
   count: number;
 }
 
-export type StudyMode = 'flashcard' | 'grid' | 'fill';
+export type StudyMode = 'flashcard' | 'grid' | 'fill' | 'match';
 
 interface LessonPickerProps {
   lessons: Lesson[];
@@ -20,6 +21,7 @@ interface LessonPickerProps {
   topic?: string | null;
   onSelect: (lesson: Lesson, mode: StudyMode) => void;
   onDelete: (lessonName: string) => void;
+  onAdd: (lessonName: string) => Promise<void>;
 }
 
 const MODES: { id: StudyMode; label: string; icon: React.ReactNode }[] = [
@@ -28,7 +30,6 @@ const MODES: { id: StudyMode; label: string; icon: React.ReactNode }[] = [
   { id: 'grid',      label: 'Bảng từ',   icon: <LayoutGrid className="w-3.5 h-3.5" /> },
 ];
 
-// Stripe colour cycles per lesson index
 const STRIPES = [
   'bg-red-400',
   'bg-amber-400',
@@ -48,10 +49,10 @@ const STRIPE_BARS = [
 const LS_KEY = 'hanzi_lesson_progress';
 
 export interface LessonProgress {
-  seen: number;   // distinct vocab items encountered
+  seen: number;
   total: number;
   lastMode: StudyMode;
-  completedAt?: number; // timestamp ms
+  completedAt?: number;
 }
 
 function getStorageKey(topic: string | null | undefined, lessonName: string) {
@@ -92,7 +93,7 @@ export function clearAllProgress() {
   } catch { /* ignore */ }
 }
 
-// ── Component ─────────────────────────────────────────────────────────────
+// ── Progress bar width ────────────────────────────────────────────────────
 function getProgressWidthClass(pct: number) {
   if (pct <= 0) return 'w-0';
   if (pct < 10) return 'w-1/12';
@@ -108,9 +109,13 @@ function getProgressWidthClass(pct: number) {
   return 'w-full';
 }
 
-export default function LessonPicker({ lessons, isLoading, progressResetKey, onSelect, onDelete }: LessonPickerProps) {
-  // Read progress from localStorage on client side
-  const [progMap, setProgMap] = useState<Record<string, LessonProgress>>({});
+// ── Component ─────────────────────────────────────────────────────────────
+export default function LessonPicker({ lessons, isLoading, progressResetKey, topic, onSelect, onDelete, onAdd }: LessonPickerProps) {
+  const [progMap, setProgMap]   = useState<Record<string, LessonProgress>>({});
+  const [newName, setNewName]   = useState('');
+  const [adding, setAdding]     = useState(false);
+  const [addError, setAddError] = useState('');
+  const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
     const map: Record<string, LessonProgress> = {};
@@ -132,7 +137,24 @@ export default function LessonPicker({ lessons, isLoading, progressResetKey, onS
     });
   };
 
-  if (isLoading || lessons.length === 0) return null;
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const name = newName.trim();
+    if (!name) return;
+    setAdding(true);
+    setAddError('');
+    try {
+      await onAdd(name);
+      setNewName('');
+      setShowForm(false);
+    } catch (err: unknown) {
+      setAddError(err instanceof Error ? err.message : 'Có lỗi xảy ra.');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  if (isLoading) return null;
 
   const completedCount = lessons.filter((l) => {
     const p = progMap[l.name];
@@ -214,9 +236,7 @@ export default function LessonPicker({ lessons, isLoading, progressResetKey, onS
                   <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full transition-all duration-500 ${
-                        done
-                          ? 'bg-emerald-400'
-                          : STRIPE_BARS[i % STRIPE_BARS.length]
+                        done ? 'bg-emerald-400' : STRIPE_BARS[i % STRIPE_BARS.length]
                       } ${getProgressWidthClass(pct)}`}
                     />
                   </div>
@@ -243,6 +263,53 @@ export default function LessonPicker({ lessons, isLoading, progressResetKey, onS
             </div>
           );
         })}
+
+        {/* ── Thêm bài học mới ── */}
+        {showForm ? (
+          <form
+            onSubmit={handleAdd}
+            className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-lg p-4 flex flex-col gap-3"
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <BookOpen className="w-4 h-4 text-white/60" />
+              <span className="text-white/80 text-sm font-semibold">Bài học mới</span>
+            </div>
+            <input
+              autoFocus
+              type="text"
+              value={newName}
+              onChange={(e) => { setNewName(e.target.value); setAddError(''); }}
+              placeholder="Tên bài học..."
+              className="w-full px-3 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white placeholder:text-white/30 text-sm font-medium outline-none focus:ring-2 focus:ring-white/30"
+            />
+            {addError && <p className="text-red-300 text-xs">{addError}</p>}
+            <div className="flex gap-2">
+              <button
+                type="submit"
+                disabled={adding || !newName.trim()}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition-all disabled:opacity-40"
+              >
+                {adding ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                Tạo bài học
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowForm(false); setNewName(''); setAddError(''); }}
+                className="flex-1 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white/70 text-xs font-semibold transition-all"
+              >
+                Hủy
+              </button>
+            </div>
+          </form>
+        ) : (
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 backdrop-blur-md rounded-2xl border border-dashed border-white/20 hover:border-white/40 shadow-lg px-4 py-5 text-white/50 hover:text-white/80 text-sm font-semibold transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            Thêm bài học
+          </button>
+        )}
       </div>
     </div>
   );

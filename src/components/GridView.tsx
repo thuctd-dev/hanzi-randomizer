@@ -8,8 +8,8 @@ export interface Vocabulary {
   hanzi: string;
   pinyin: string;
   meaning: string;
-  topic?: string;
-  lesson: string;
+  topic?: string | null;
+  lesson?: string | null;
 }
 
 interface GridViewProps {
@@ -64,13 +64,11 @@ export default function GridView({ vocabularies, topic, lesson, onDataChange }: 
 
   const handleAdd = async () => {
     if (!newRow.hanzi || !newRow.pinyin || !newRow.meaning) return;
-    const lessonName = lesson || vocabularies[0]?.lesson || 'Bài 1';
     setIsSubmitting(true);
     try {
-      const body: Record<string, unknown> = { items: [newRow], lesson: lessonName };
-      if (topic?.trim()) {
-        body.topic = topic.trim();
-      }
+      const body: Record<string, unknown> = { items: [newRow] };
+      if (topic?.trim())  body.topic  = topic.trim();
+      if (lesson?.trim()) body.lesson = lesson.trim();
       const res = await fetch('/api/vocabulary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
