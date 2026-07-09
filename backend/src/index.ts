@@ -43,9 +43,12 @@ app.use((_req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
 
-// ── Start ─────────────────────────────────────────────────
-app.listen(PORT, () => {
-  console.log(`🚀 API server running on http://localhost:${PORT}`);
-});
+// ── Start (local dev only) ────────────────────────────────
+// Vercel serverless does not call listen — it imports the app directly
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`🚀 API server running on http://localhost:${PORT}`);
+  });
+}
 
 export default app;
