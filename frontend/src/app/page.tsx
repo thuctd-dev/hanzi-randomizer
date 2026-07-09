@@ -7,9 +7,9 @@ import ImportForm from '@/components/ImportForm';
 import GridView, { Vocabulary } from '@/components/GridView';
 import FillInGrid from '@/components/FillInGrid';
 import MatchGame from '@/components/MatchGame';
-import { StudyMode, saveProgress, getProgress } from '@/components/LessonPicker';
+import { StudyMode, saveProgress, getProgress } from '@/lib/progress';
 import { Topic } from '@/components/TopicPicker';
-import { apiUrl } from '@/lib/api';
+import { apiUrl, type Lesson } from '@/lib/api';
 import {
   BookOpen, Database, Loader2, LayoutGrid, Layers,
   PencilLine, ArrowLeft, Plus, X, BookMarked, Trash2, Pencil, Check, Link2, Pin,
@@ -40,10 +40,10 @@ export default function Home() {
   const [topicsLoading, setTopicsLoading] = useState(true);
   const [activeTopic, setActiveTopic]     = useState<string | null>(null);
 
-  const [lessons, setLessons]               = useState<{ name: string; count: number }[]>([]);
+  const [lessons, setLessons]               = useState<Lesson[]>([]);
   const [lessonsLoading, setLessonsLoading] = useState(true);
 
-  const [activeLesson, setActiveLesson]   = useState<{ name: string; count: number } | null>(null);
+  const [activeLesson, setActiveLesson]   = useState<Lesson | null>(null);
   const [viewMode, setViewMode]           = useState<StudyMode>('flashcard');
   const [vocabularies, setVocabularies]   = useState<Vocabulary[]>([]);
   const [currentIndex, setCurrentIndex]   = useState(0);
@@ -58,12 +58,15 @@ export default function Home() {
   const [addingTopic, setAddingTopic]     = useState(false);
   const [addTopicError, setAddTopicError] = useState('');
 
-  const [pinnedTopics, setPinnedTopics] = useState<Set<string>>(() => {
+  const [pinnedTopics, setPinnedTopics] = useState<Set<string>>(new Set());
+
+  // Load pinned topics from localStorage after mount (SSR-safe)
+  useEffect(() => {
     try {
       const raw = localStorage.getItem('hanzi_pinned_topics');
-      return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
-    } catch { return new Set(); }
-  });
+      if (raw) setPinnedTopics(new Set(JSON.parse(raw) as string[]));
+    } catch { /* ignore */ }
+  }, []);
 
   const togglePin = useCallback((topicName: string) => {
     setPinnedTopics(prev => {
@@ -129,12 +132,12 @@ export default function Home() {
   }, []);
   useEffect(() => { void fetchLessons(); }, [fetchLessons]);
 
-  const fetchVocabularies = useCallback(async (lessonName?: string, topicName?: string) => {
+  const fetchVocabularies = useCallback(async (lessonId?: string, topicName?: string) => {
     setVocabLoading(true);
     try {
       const params = new URLSearchParams();
-      if (lessonName) params.append('lesson', lessonName);
-      if (topicName)  params.append('topic', topicName);
+      if (lessonId)  params.append('lessonId', lessonId);
+      if (topicName) params.append('topic', topicName);
       const res = await fetch(apiUrl(`/api/vocabulary?${params.toString()}`));
       const json = await res.json();
       setVocabularies(json.data?.length ? [...json.data].sort(() => Math.random() - 0.5) : []);
@@ -144,31 +147,31 @@ export default function Home() {
   }, []);
 
   // ── handlers ──────────────────────────────────────────────
-  const handleSelectLesson = (lesson: { name: string; count: number }) => {
+  const handleSelectLesson = (lesson: Lesson) => {
     setActiveLesson(lesson);
     setViewMode('flashcard');
     seenIds.current = new Set();
-    fetchVocabularies(lesson.name, undefined);
+    fetchVocabularies(lesson.id, undefined);
   };
 
-  const handleDeleteLesson = useCallback(async (lessonName: string) => {
+  const handleDeleteLesson = useCallback(async (lessonId: string) => {
     try {
-      const res = await fetch(apiUrl(`/api/lessons?name=${encodeURIComponent(lessonName)}`), { method: 'DELETE' });
+      const res = await fetch(apiUrl(`/api/lessons/${lessonId}`), { method: 'DELETE' });
       if (!res.ok) throw new Error('Xóa thất bại');
       await fetchLessons();
     } catch (e) { console.error(e); }
   }, [fetchLessons]);
 
-  const handleRenameLesson = useCallback(async (oldName: string, newName: string) => {
+  const handleRenameLesson = useCallback(async (lessonId: string, oldName: string, newName: string) => {
     const trimmed = newName.trim();
     if (!trimmed || trimmed === oldName) return;
     try {
-      const res = await fetch(apiUrl('/api/lessons'), {
+      const res = await fetch(apiUrl(`/api/lessons/${lessonId}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ oldName, newName: trimmed }),
+        body: JSON.stringify({ name: trimmed }),
       });
-      const json = await res.json();
+      const json = await res.json() as { error?: string };
       if (!res.ok) throw new Error(json.error || 'Đổi tên thất bại');
       await fetchLessons();
     } catch (e) { console.error(e); }
@@ -215,12 +218,12 @@ export default function Home() {
   const handleRandom50 = useCallback(async () => {
     setVocabLoading(true);
     try {
-      const res = await fetch(apiUrl('/api/vocabulary?hasLesson=1'));
+      const res = await fetch(apiUrl('/api/vocabulary'));
       const json = await res.json();
       if (json.data?.length) {
         const pool = [...json.data].sort(() => Math.random() - 0.5).slice(0, 50);
         setVocabularies(pool); setCurrentIndex(0);
-        setActiveLesson({ name: 'Ôn 50 câu ngẫu nhiên', count: pool.length });
+        setActiveLesson({ id: '__random__', name: 'Ôn 50 câu ngẫu nhiên', order: -1, wordCount: pool.length });
         setViewMode('flashcard'); seenIds.current = new Set();
       }
     } catch (e) { console.error(e); }
@@ -236,7 +239,7 @@ export default function Home() {
     seenIds.current.add(vocabId);
     const existing = getProgress(null, activeLesson.name);
     const seen  = seenIds.current.size;
-    const total = vocabularies.length || activeLesson.count;
+    const total = vocabularies.length || activeLesson.wordCount;
     saveProgress(null, activeLesson.name, {
       seen, total, lastMode: viewMode,
       ...(seen >= total ? { completedAt: Date.now() } : {}),
@@ -359,7 +362,7 @@ export default function Home() {
                 const isActive = activeLesson?.name === 'Bộ thủ';
                 return (
                   <button onClick={() => {
-                    setActiveLesson({ name: 'Bộ thủ', count: 52 }); setActiveTopic(null);
+                    setActiveLesson({ id: '__bothu__', name: 'Bộ thủ', order: -1, wordCount: 52 }); setActiveTopic(null);
                     setViewMode('flashcard'); seenIds.current = new Set();
                     fetchVocabularies('Bộ thủ', undefined);
                   }}
@@ -448,7 +451,7 @@ export default function Home() {
       <div className="max-w-4xl mx-auto px-4 pt-28 pb-8">
         {isImporting && (
           <div className="mb-8 animate-fade-up">
-            <ImportForm onSuccess={() => handleImportSuccess()} topic={activeTopic} />
+            <ImportForm onSuccess={() => handleImportSuccess()} topic={activeTopic} lessonId={activeLesson?.id} lessonName={activeLesson?.name} />
           </div>
         )}
 
@@ -492,7 +495,7 @@ export default function Home() {
                     <p className="text-white/50 text-xs mt-1">Xem, thêm, sửa và xóa từ vựng trực tiếp.</p>
                   </div>
                   <GridView vocabularies={vocabularies} lesson={activeLesson.name}
-                    onDataChange={() => fetchVocabularies(activeLesson.name)} />
+                    onDataChange={() => fetchVocabularies(activeLesson.id)} />
                 </div>
               )}
             </div>
@@ -529,30 +532,30 @@ export default function Home() {
               ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
                   {lessons.map((lesson, i) => (
-                    <div key={lesson.name}
+                    <div key={lesson.id}
                       className={`group relative bg-linear-to-br ${LESSON_COLORS[i % LESSON_COLORS.length]} border backdrop-blur-md rounded-2xl p-4 hover:-translate-y-0.5 hover:shadow-lg transition-all duration-200`}>
-                      {editingLesson !== lesson.name && (
+                      {editingLesson !== lesson.id && (
                         <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                          <button onClick={(e) => { e.stopPropagation(); setEditingLesson(lesson.name); setEditLessonValue(lesson.name); }}
+                          <button onClick={(e) => { e.stopPropagation(); setEditingLesson(lesson.id); setEditLessonValue(lesson.name); }}
                             className="w-6 h-6 rounded-full bg-black/30 hover:bg-blue-500 text-white/50 hover:text-white flex items-center justify-center transition-all" title="Đổi tên">
                             <Pencil className="w-3 h-3" />
                           </button>
-                          <button onClick={(e) => { e.stopPropagation(); void handleDeleteLesson(lesson.name); }}
+                          <button onClick={(e) => { e.stopPropagation(); void handleDeleteLesson(lesson.id); }}
                             className="w-6 h-6 rounded-full bg-black/30 hover:bg-red-500 text-white/50 hover:text-white flex items-center justify-center transition-all" title="Xóa bài học">
                             <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
                       )}
                       <span className={`inline-block w-2 h-2 rounded-full ${LESSON_DOTS[i % LESSON_DOTS.length]} mb-3`} />
-                      {editingLesson === lesson.name ? (
+                      {editingLesson === lesson.id ? (
                         <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                           <input autoFocus value={editLessonValue} onChange={(e) => setEditLessonValue(e.target.value)}
                             onKeyDown={async (e) => {
-                              if (e.key === 'Enter') { await handleRenameLesson(lesson.name, editLessonValue); setEditingLesson(null); }
+                              if (e.key === 'Enter') { await handleRenameLesson(lesson.id, lesson.name, editLessonValue); setEditingLesson(null); }
                               if (e.key === 'Escape') setEditingLesson(null);
                             }}
                             className="flex-1 min-w-0 bg-white/15 border border-white/30 rounded-lg px-2 py-1 text-white text-xs font-semibold outline-none focus:ring-2 focus:ring-white/40" />
-                          <button onClick={async () => { await handleRenameLesson(lesson.name, editLessonValue); setEditingLesson(null); }}
+                          <button onClick={async () => { await handleRenameLesson(lesson.id, lesson.name, editLessonValue); setEditingLesson(null); }}
                             className="w-6 h-6 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white flex items-center justify-center shrink-0">
                             <Check className="w-3 h-3" />
                           </button>
@@ -564,7 +567,7 @@ export default function Home() {
                       ) : (
                         <button onClick={() => handleSelectLesson(lesson)} className="w-full text-left active:scale-95 transition-transform">
                           <p className="text-white font-bold text-sm leading-tight truncate">{lesson.name}</p>
-                          <p className="text-white/50 text-xs mt-1 font-medium">{lesson.count} từ vựng</p>
+                          <p className="text-white/50 text-xs mt-1 font-medium">{lesson.wordCount} từ vựng</p>
                         </button>
                       )}
                     </div>

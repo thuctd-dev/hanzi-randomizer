@@ -3,23 +3,24 @@
 import { useState, useRef, useMemo } from 'react';
 import { Upload, Loader2, CheckCircle, FileText, BookMarked, Eye, AlertCircle } from 'lucide-react';
 import { parseVocabularyText, ParsedItem } from '@/lib/parseVocabulary';
-import { apiUrl } from '@/lib/api';
+import { apiUrl, getOrCreateLesson } from '@/lib/api';
 
 interface ImportFormProps {
   onSuccess: (topic?: string) => void;
-  topic?: string | null;      // nếu có → chế độ chủ đề, ẩn field bài học
-  lesson?: string | null;     // nếu có → chế độ bài học, ẩn field chủ đề
+  topic?: string | null;
+  lessonId?: string | null;   // id của lesson đã chọn
+  lessonName?: string | null; // tên lesson đã chọn (để hiển thị)
 }
 
-export default function ImportForm({ onSuccess, topic: initialTopic, lesson: initialLesson }: ImportFormProps) {
-  const isTopicMode  = !!initialTopic;   // nhập vào chủ đề → không cần lesson
-  const isLessonMode = !!initialLesson;  // nhập vào bài học → không cần topic
+export default function ImportForm({ onSuccess, topic: initialTopic, lessonId: initialLessonId, lessonName: initialLessonName }: ImportFormProps) {
+  const isTopicMode  = !!initialTopic;
+  const isLessonMode = !!initialLessonId;
 
-  const [topic,  setTopic]  = useState(initialTopic  ?? '');
-  const [lesson, setLesson] = useState(initialLesson ?? '');
-  const [text, setText]     = useState('');
+  const [topic,      setTopic]      = useState(initialTopic      ?? '');
+  const [lessonName, setLessonName] = useState(initialLessonName ?? '');
+  const [text,       setText]       = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPreview, setShowPreview]   = useState(false);
+  const [showPreview,  setShowPreview]  = useState(false);
   const [status, setStatus] = useState<{ type: 'error' | 'success' | null; message: string }>({
     type: null, message: '',
   });
@@ -33,9 +34,8 @@ export default function ImportForm({ onSuccess, topic: initialTopic, lesson: ini
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Auto-fill lesson name from filename only when not in topic-only mode
-    if (!isTopicMode && !lesson.trim()) {
-      setLesson(file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '));
+    if (!isTopicMode && !isLessonMode && !lessonName.trim()) {
+      setLessonName(file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '));
     }
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -51,14 +51,13 @@ export default function ImportForm({ onSuccess, topic: initialTopic, lesson: ini
   };
 
   const canSubmit = parsed.length > 0
-    && (isTopicMode  ? topic.trim()  !== '' : true)
-    && (isLessonMode ? lesson.trim() !== '' : true)
-    && (!isTopicMode && !isLessonMode ? topic.trim() !== '' || lesson.trim() !== '' : true);
+    && (isTopicMode  ? topic.trim()      !== '' : true)
+    && (isLessonMode ? true                    : true)
+    && (!isTopicMode && !isLessonMode ? topic.trim() !== '' || lessonName.trim() !== '' : true);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
-    if (parsed.length === 0) {
+    if (!canSubmit || parsed.length === 0) {
       setStatus({ type: 'error', message: 'Không tìm thấy từ vựng hợp lệ.' });
       return;
     }
@@ -67,8 +66,8 @@ export default function ImportForm({ onSuccess, topic: initialTopic, lesson: ini
     setStatus({ type: null, message: '' });
 
     try {
-      const topicName  = topic.trim()  || null;
-      const lessonName = lesson.trim() || null;
+      const topicName = topic.trim() || null;
+      let resolvedLessonId: string | null = initialLessonId ?? null;
 
       // Tạo topic nếu có
       if (topicName) {
@@ -78,9 +77,14 @@ export default function ImportForm({ onSuccess, topic: initialTopic, lesson: ini
           body: JSON.stringify({ name: topicName }),
         });
         if (!topicRes.ok && topicRes.status !== 409) {
-          const err = await topicRes.json();
+          const err = await topicRes.json() as { error?: string };
           throw new Error(err.error || 'Không thể tạo chủ đề mới.');
         }
+      }
+
+      // Tạo hoặc lấy lesson nếu có tên bài học
+      if (!resolvedLessonId && lessonName.trim()) {
+        resolvedLessonId = await getOrCreateLesson(lessonName.trim());
       }
 
       const res = await fetch(apiUrl('/api/vocabulary'), {
@@ -88,12 +92,12 @@ export default function ImportForm({ onSuccess, topic: initialTopic, lesson: ini
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           items: parsed,
-          ...(topicName  ? { topic:  topicName  } : {}),
-          ...(lessonName ? { lesson: lessonName } : {}),
+          ...(resolvedLessonId ? { lessonId: resolvedLessonId } : {}),
+          ...(topicName        ? { topic: topicName }           : {}),
         }),
       });
 
-      const data = await res.json();
+      const data = await res.json() as { count?: number; error?: string };
       if (!res.ok) throw new Error(data.error || 'Có lỗi xảy ra khi lưu vào database.');
 
       const label = topicName && lessonName
@@ -102,7 +106,7 @@ export default function ImportForm({ onSuccess, topic: initialTopic, lesson: ini
 
       setStatus({ type: 'success', message: `Đã lưu thành công ${data.count} từ vựng vào "${label}"!` });
       setText('');
-      if (!isLessonMode) setLesson('');
+      if (!isLessonMode) setLessonName('');
       setShowPreview(false);
 
       setTimeout(() => {
@@ -171,10 +175,10 @@ export default function ImportForm({ onSuccess, topic: initialTopic, lesson: ini
               <span className="flex items-center gap-1.5">
                 <BookMarked className="w-4 h-4 text-blue-500" />
                 Tên bài học
-                {!isLessonMode && <span className="text-slate-400 font-normal text-xs">(tuỳ chọn)</span>}
+                {!isLessonMode && <span className="text-slate-400 font-normal text-xs">(tuỳ chọn — nhập mới hoặc dùng bài đã có)</span>}
               </span>
             </label>
-            <input type="text" value={lesson} onChange={(e) => setLesson(e.target.value)}
+            <input type="text" value={lessonName} onChange={(e) => setLessonName(e.target.value)}
               placeholder="VD: Bài 3 – Gia đình"
               readOnly={isLessonMode}
               className={`w-full px-4 py-3 border-2 rounded-2xl outline-none transition-all text-slate-700 placeholder:text-slate-400

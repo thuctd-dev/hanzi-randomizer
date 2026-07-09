@@ -28,16 +28,7 @@ export default function RootLayout({
         <link
           href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
           rel="stylesheet"
-          media="print"
-          // @ts-expect-error — onload trick for async CSS loading
-          onLoad="this.media='all'"
         />
-        <noscript>
-          <link
-            href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700;900&display=swap"
-            rel="stylesheet"
-          />
-        </noscript>
       </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
